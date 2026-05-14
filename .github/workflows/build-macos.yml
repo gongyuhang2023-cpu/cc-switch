@@ -30,8 +30,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Disable updater signing
+        run: |
+          cd src-tauri
+          python3 -c "
+          import json
+          with open('tauri.conf.json', 'r') as f:
+              conf = json.load(f)
+          if 'plugins' in conf and 'updater' in conf['plugins']:
+              conf['plugins']['updater'].pop('pubkey', None)
+          with open('tauri.conf.json', 'w') as f:
+              json.dump(conf, f, indent=2)
+          "
+
       - name: Build Tauri (universal binary)
-        run: pnpm tauri build --target universal-apple-darwin --bundles dmg,app
+        run: pnpm tauri build --target universal-apple-darwin
 
       - name: Package DMG and app
         run: |
