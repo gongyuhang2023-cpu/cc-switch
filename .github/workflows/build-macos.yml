@@ -30,36 +30,41 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Disable updater signing
+      - name: Disable updater (avoid signing key requirement)
         run: |
-          cd src-tauri
           python3 -c "
-          import json
-          with open('tauri.conf.json', 'r') as f:
-              conf = json.load(f)
-          if 'plugins' in conf and 'updater' in conf['plugins']:
-              conf['plugins']['updater'].pop('pubkey', None)
-          with open('tauri.conf.json', 'w') as f:
-              json.dump(conf, f, indent=2)
+          import json, pathlib
+          p = pathlib.Path('src-tauri/tauri.conf.json')
+          c = json.loads(p.read_text())
+          # 1) Tell bundler NOT to create updater artifacts
+          c['bundle']['createUpdaterArtifacts'] = False
+          # 2) Remove updater plugin config (contains pubkey)
+          c.get('plugins', {}).pop('updater', None)
+          p.write_text(json.dumps(c, indent=2))
           "
+          echo "--- Patched tauri.conf.json (updater disabled) ---"
+          grep -E 'createUpdater|updater' src-tauri/tauri.conf.json || echo '(no updater references remain)'
 
       - name: Build Tauri (universal binary)
         run: pnpm tauri build --target universal-apple-darwin
 
-      - name: Package DMG and app
+      - name: Collect artifacts
         run: |
           mkdir -p release-assets
-          APP_DIR="src-tauri/target/universal-apple-darwin/release/bundle/macos"
-          APP_PATH=$(find "$APP_DIR" -maxdepth 1 -name "*.app" -type d | head -1)
-          if [ -n "$APP_PATH" ]; then
-            APP_NAME=$(basename "$APP_PATH")
-            hdiutil create -volname "CC Switch" -srcfolder "$APP_PATH" -ov -format UDZO "release-assets/CC-Switch-macOS-unsigned.dmg"
-            cd "$APP_DIR" && zip -r "../../../../release-assets/CC-Switch-macOS-unsigned.zip" "$APP_NAME"
+          BUNDLE="src-tauri/target/universal-apple-darwin/release/bundle"
+          # DMG from Tauri bundler
+          find "$BUNDLE/dmg" -name "*.dmg" -exec cp {} release-assets/ \; 2>/dev/null || true
+          # Zip the .app
+          APP=$(find "$BUNDLE/macos" -maxdepth 1 -name "*.app" -type d | head -1)
+          if [ -n "$APP" ]; then
+            (cd "$(dirname "$APP")" && zip -r "$OLDPWD/release-assets/CC-Switch-macOS-unsigned.zip" "$(basename "$APP")")
           fi
+          echo "--- Release assets ---"
+          ls -lh release-assets/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: cc-switch-macos-unsigned
           path: release-assets/*
-          if-no-files-found: warn
+          if-no-files-found: error
