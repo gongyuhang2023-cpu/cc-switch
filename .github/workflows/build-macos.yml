@@ -31,9 +31,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build Tauri (universal binary)
-        run: pnpm tauri build --target universal-apple-darwin
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
+        run: pnpm tauri build --target universal-apple-darwin --bundles dmg,app
 
       - name: Package DMG and app
         run: |
