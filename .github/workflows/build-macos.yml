@@ -1,0 +1,54 @@
+name: Build macOS (unsigned)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add macOS targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10.12.3
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri (universal binary)
+        run: pnpm tauri build --target universal-apple-darwin
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+
+      - name: Package DMG and app
+        run: |
+          mkdir -p release-assets
+          APP_DIR="src-tauri/target/universal-apple-darwin/release/bundle/macos"
+          APP_PATH=$(find "$APP_DIR" -maxdepth 1 -name "*.app" -type d | head -1)
+          if [ -n "$APP_PATH" ]; then
+            APP_NAME=$(basename "$APP_PATH")
+            hdiutil create -volname "CC Switch" -srcfolder "$APP_PATH" -ov -format UDZO "release-assets/CC-Switch-macOS-unsigned.dmg"
+            cd "$APP_DIR" && zip -r "../../../../release-assets/CC-Switch-macOS-unsigned.zip" "$APP_NAME"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: cc-switch-macos-unsigned
+          path: release-assets/*
+          if-no-files-found: warn
